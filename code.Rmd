@@ -1,0 +1,236 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+```{r}
+library(readxl)
+data <- read_excel("C:/Users/王静怡/Desktop/FYP/Data/data.xls")
+```
+
+```{r}
+summary(data)
+```
+
+```{r}
+flow = data$`Flow US$ mill`/7
+summary(flow)
+```
+```{r}
+sd(na.omit(data$Return))
+sd(flow)
+```
+```{r}
+library(DistributionUtils)
+skewness(na.omit(data$Return))
+skewness(flow)
+kurtosis(na.omit(data$Return))
+kurtosis(flow)
+```
+
+
+```{r}
+time = as.Date(data$Date)
+close = data$Close
+library(ggplot2)
+ggplot(data = data, mapping = aes(x = time, y = close, group = 1)) + geom_line() + xlab('Year') + ggtitle('Plot of Close price') + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r}
+flow = data$`Flow US$ mill`/7
+ggplot(data = data, mapping = aes(x = time,y = flow, group = 1)) + geom_line() + xlab('Year') + ggtitle('Plot of fund flow') + theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+cum = data$`Flow Cum`
+ggplot(data = data, mapping = aes(x = time,y = cum, group = 1)) + geom_line() + xlab('Year')
+```
+
+
+```{r}
+close_diff = diff(close)
+return = data$Return
+return_diff = diff(return)
+library(zoo)
+plot(zoo(return_diff, time), plot.type = "single", xlab="Time",ylab="value",lty=1:3);
+hist(return_diff)
+hist(flow)
+hist(return)
+```
+
+```{r}
+qqnorm(return)
+qqline(return)
+qqnorm(flow)
+qqline(flow)
+```
+
+```{r}
+#shapiro正态检验，p值越小，越拒绝原假设，表明序列不服从正态分布。原假设H0：数据服从正态分布
+print(shapiro.test(return))
+print(shapiro.test(flow))
+flow_diff=diff(flow)
+print(shapiro.test(flow_diff))
+print(shapiro.test(return_diff))
+```
+
+```{r}
+#序列是否平稳
+library(tseries)
+print(adf.test(flow, alt="stationary"))
+return = na.omit(return)
+print(adf.test(return, alt="stationary"))
+```
+
+
+```{r}
+#arima模型定阶--还没看懂
+#library(stats)
+#par(mfrow=c(1,2))
+#acf(return_diff)
+#pacf(return_diff)
+#par(mfrow=c(1,2))
+#  acf(flow)
+#  pacf(flow)
+```
+
+
+```{r}
+library(forecast)
+armamodel1 = auto.arima(flow, ic = 'aic')
+armamodel1
+armamodel2 = auto.arima(return, ic = 'aic')
+armamodel2
+```
+```{r}
+Box.test(residuals(armamodel1), lag = 5 ,type = "Ljung-Box")  
+Box.test(residuals(armamodel2), lag = 1 ,type = "Ljung-Box")
+```
+
+```{r}
+Box.test(residuals(armamodel1)^2, lag = 5)
+Box.test(residuals(armamodel2)^2, lag = 1)
+```
+
+
+```{r}
+library(MTS)
+archTest(residuals(armamodel1), lag = 5)
+archTest(residuals(armamodel2), lag = 1)
+```
+
+
+
+```{r}
+library(readxl)
+Simplified_data <- read_excel("C:/Users/王静怡/Desktop/FYP/Data/Simplified data.xlsx")
+```
+
+```{r}
+#model specification
+library(rmgarch)
+meanSpec=list(armaOrder=c(0,0))
+varSpec=list(model="sGARCH",garchOrder=c(1,1))#standard GARCH
+spec1=ugarchspec(mean.model=meanSpec,variance.model=varSpec)
+mySpec=multispec(replicate(2,spec1))#两个时间序列
+```
+
+```{r}
+#mspec=dccspec(mySpec,lag.criterion = c("AIC"),external.regressors = NULL,model=c("DCC"),distribution = c("mvt"))
+mspec=dccspec(mySpec, lag.criterion = c("AIC") ,dccOrder = c(1,1), distribution = c("mvnorm"))
+mspec
+```
+
+```{r}
+Simplified_data=na.exclude(Simplified_data)
+time = as.Date(Simplified_data$'Date')
+p = ts(Simplified_data, start = 1)
+```
+
+```{r}
+fdcc = dccfit(mspec,data=p[,2:3],out.sample = 1, parallel=TRUE, parallel.control = list(pkg = c("multicore"), cores = 2),fit = NULL,VAR.fit = NULL)
+show(fdcc)
+plot(fdcc)
+
+```
+
+```{r}
+#joint significance test?
+coe=fdcc@mfit$coef
+print(coe)
+```
+
+```{r}
+cor(Simplified_data$Return,Simplified_data$flow_diff)
+```
+```{r}
+dcc_fcst = dccforecast(fdcc, n.ahead = 100)
+show(dcc_fcst)
+plot(dcc_fcst)
+```
+
+```{r}
+cor1 = rcor(fdcc)
+dim(cor1)
+cor1[,,dim(cor1)[3]]
+```
+
+```{r}
+cor_return = cor1[2,1,]
+plot.ts(cor_return)
+```
+
+```{r}
+cov1 = rcov(fdcc)
+cov_return = cov1[2,1,]
+plot.ts(cov_return, col = "green")
+```
+
+```{r}
+cov_fcst = dcc_fcst@mforecast$H[[1]]#预测的协方差
+cor_fcst = dcc_fcst@mforecast$R[[1]]#预测的相关系数
+```
+
+```{r}
+plot.ts(cov_fcst[1,2,])
+plot.ts(cor_fcst[1,2,])
+```
+```{r}
+residual_r = fdcc@model$residuals[,1]
+residual_f = fdcc@model$residuals[,2]
+```
+
+```{r}
+library(lmtest)
+grangertest(residual_r,residual_f,order = 6)
+grangertest(residual_f~residual_r,order = 6)
+#               y1不是引起y2格兰杰变化的原因
+```
+
+```{r}
+library(lmtest)
+grangertest(residual_f,residual_r,order = 1)
+grangertest(residual_f,residual_r,order = 2)
+grangertest(residual_f,residual_r,order = 3)
+grangertest(residual_f,residual_r,order = 4)
+grangertest(residual_f,residual_r,order = 5)
+grangertest(residual_f,residual_r,order = 6)
+```
+
+```{r}
+fdcc@model$residuals
+```
+
+```{r}
+#check whether it is CCC
+library(rmgarch)
+DCCtest(p)
+```
+
+```{r}
+ccf(Simplified_data$Return,Simplified_data$flow_diff)
+```
+
