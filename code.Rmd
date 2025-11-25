@@ -87,7 +87,7 @@ print(adf.test(return, alt="stationary"))
 
 
 ```{r}
-#arima模型定阶--还没看懂
+#arima模型定阶
 #library(stats)
 #par(mfrow=c(1,2))
 #acf(return_diff)
@@ -233,4 +233,5 @@ DCCtest(p)
 ```{r}
 ccf(Simplified_data$Return,Simplified_data$flow_diff)
 ```
+
 
